@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.URL;
+import java.nio.file.FileSystems;
 import java.util.Enumeration;
 import java.util.Map;
 import java.util.Set;
@@ -269,7 +270,7 @@ public class BundleMaker {
     @Deprecated
     public Bundle installBundle(File f, boolean start) {
         try {
-            Bundle b = Osgis.install( framework, "file://"+f.getAbsolutePath() );
+            Bundle b = Osgis.install( framework, f.getCanonicalFile().toURI().toString());
             if (start) {
                 // benefits of start:
                 // a) we get wiring issues thrown here, and
