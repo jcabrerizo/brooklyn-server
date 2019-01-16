@@ -19,17 +19,14 @@
 package org.apache.brooklyn.rest.security.provider;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpSession;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
+import com.google.common.base.Preconditions;
 import org.apache.brooklyn.api.mgmt.ManagementContext;
 import org.apache.brooklyn.rest.filter.BrooklynSecurityProviderFilterHelper;
 import org.apache.brooklyn.util.exceptions.Exceptions;
@@ -58,6 +55,8 @@ import org.slf4j.LoggerFactory;
 
 import com.google.common.annotations.Beta;
 
+import static org.apache.brooklyn.rest.BrooklynWebConfig.*;
+
 /** Configurable OAuth redirect security provider
  * 
  *  Redirects all inbound requests to an oath web server unless a session token is specified. */
@@ -72,30 +71,22 @@ public class OauthSecurityProvider implements SecurityProvider {
     private static final String OAUTH_AUTH_CODE_PARAMETER_FROM_USER = "code";
     private static final String OAUTH_AUTH_CODE_PARAMETER_FOR_SERVER = OAUTH_AUTH_CODE_PARAMETER_FROM_USER;
     
-//    private static String KEY_PREFIX = BrooklynWebConfig.BASE_NAME_SECURITY+".oauth.";
-//    ConfigKey<String> URI_GET_TOKEN_KEY = ConfigKeys.newStringConfigKey(KEY_PREFIX+"uriGetToken", "URL where token can be fetched");
-    // TODO parameterise values below with keys as above
-    
     // tempting to use getJettyRequest().getRequestURL().toString();
     // but some oauth providers require this to be declared
-    private String callbackUri = "http://localhost.io:8081/";
+    private String callbackUri;
     private String accessTokenResponseKey = "access_token";
     private String audience = "audience";
     private Duration validity = Duration.hours(1);
     
     // google test data - hard-coded for now
-    private String uriGetToken = "https://accounts.google.com/o/oauth2/token";
-    private String uriAuthorize = "https://accounts.google.com/o/oauth2/auth";
-    private String uriTokenInfo = "https://www.googleapis.com/oauth2/v1/tokeninfo";
-    private String clientId = "789182012565-burd24h3bc0im74g2qemi7lnihvfqd02.apps.googleusercontent.com";
-    private String clientSecret = "X00v-LfU34U4SfsHqPKMWfQl";
-    
-    // github test data
-//    private String uriGetToken = "https://github.com/login/oauth/authorize";
-//    private String uriAuthorize = "https://github.com/login/oauth/authorize";
-//    private String uriTokenInfo = "https://github.com/login/oauth/access_token";
-//    private String clientId = "7f76b9970d8ac15b30b0";
-//    private String clientSecret = "9e15f8dd651f0b1896a3a582f17fa82f049fc910";
+    private String uriGetToken;
+    private String uriAuthorize;
+    private String uriTokenInfo;
+    private String clientId;
+    private String clientSecret;
+
+    private Set<String> authorizedUsers;
+    private Set<String> authorizedDomains;
     
     protected final ManagementContext mgmt;
 
@@ -105,19 +96,47 @@ public class OauthSecurityProvider implements SecurityProvider {
     }
 
     private synchronized void initialize() {
-        // TODO set these keys
-//        Preconditions.checkNotNull(mgmt.getConfig().getConfig(URI_GET_TOKEN_KEY), "URI to get token must be set: "+URI_GET_TOKEN_KEY.getName());
+
+        uriGetToken = mgmt.getConfig().getConfig(SECURITY_OAUTH_TOKEN_URL);
+        Preconditions.checkNotNull(uriGetToken, "URI to get token must be set: "+SECURITY_OAUTH_TOKEN_URL.getName());
+
+        uriAuthorize = mgmt.getConfig().getConfig(SECURITY_OAUTH_AUTHORIZE_URL);
+        Preconditions.checkNotNull(uriAuthorize, "URI to authorize must be set: "+SECURITY_OAUTH_AUTHORIZE_URL.getName());
+
+        uriTokenInfo = mgmt.getConfig().getConfig(SECURITY_OAUTH_VALIDATE_URL);
+        Preconditions.checkNotNull(uriTokenInfo, "URI to validate the current token must be set: "+SECURITY_OAUTH_VALIDATE_URL.getName());
+
+        clientId = mgmt.getConfig().getConfig(SECURITY_OAUTH_CLIENT_ID);
+        Preconditions.checkNotNull(clientId, "Client ID must be set: "+SECURITY_OAUTH_CLIENT_ID.getName());
+
+        clientSecret = mgmt.getConfig().getConfig(SECURITY_OAUTH_CLIENT_SECRET);
+        Preconditions.checkNotNull(clientSecret, "Client secret must be set: "+SECURITY_OAUTH_CLIENT_SECRET.getName());
+
+        callbackUri = mgmt.getConfig().getConfig(SECURITY_OAUTH_CALLBACK);
+        Preconditions.checkNotNull(callbackUri, "Callback URL must be set: "+SECURITY_OAUTH_CALLBACK.getName());
+
+        String authorizedUsersReaded= mgmt.getConfig().getConfig(SECURITY_OAUTH_AUTHORIZED_USERS);
+        if(Strings.isNonBlank(authorizedUsersReaded)){
+            authorizedUsers = new HashSet<>(Arrays.asList(authorizedUsersReaded.split("\\s*,\\s*")));
+        }
+
+        String authorizedDomainsReaded= mgmt.getConfig().getConfig(SECURITY_OAUTH_AUTHORIZED_DOMAINS);
+        if(Strings.isNonBlank(authorizedDomainsReaded)){
+            authorizedDomains = new HashSet<>(Arrays.asList(authorizedDomainsReaded.split("\\s*,\\s*")));
+        }
     }
     
     @Override
     public boolean isAuthenticated(HttpSession session) {
         // TODO tidy log messages
         log.info("isAuthenticated 1 "+getJettyRequest().getRequestURI()+" "+session+" ... "+this);
-        if(session==null) return false;
+        if(session==null || Strings.isBlank((String) session.getAttribute(OAUTH_ACCESS_TOKEN_SESSION_KEY))) return false;
 
-        Object token = session.getAttribute(OAUTH_ACCESS_TOKEN_SESSION_KEY);
-        // TODO is it valid?
-        return token!=null;
+        try {
+            return validateTokenAgainstOauthServer((String) session.getAttribute(OAUTH_ACCESS_TOKEN_SESSION_KEY),session);
+        } catch (Exception e) {
+            return  false;
+        }
     }
 
     @Override
@@ -140,7 +159,7 @@ public class OauthSecurityProvider implements SecurityProvider {
             } else if (Strings.isNonBlank(token)) {
                 // they have a token but no auth code and not or no longer authenticated; 
                 // we need to check that the token is still valid
-                return validateTokenAgainstOauthServer(token);
+                return validateTokenAgainstOauthServer(token,session);
             } else {
                 // no token or code; the user needs to log in
                 return redirectUserToOauthLoginUi();
@@ -194,58 +213,60 @@ public class OauthSecurityProvider implements SecurityProvider {
         
         // Put token in session
         String accessToken = (String) jsonObject.get(accessTokenResponseKey);
-        session.setAttribute(OAUTH_ACCESS_TOKEN_SESSION_KEY, accessToken);
-        
-        // TODO record code?
-//        request.getSession().setAttribute(SESSION_KEY_CODE, code);
+        if(validateTokenAgainstOauthServer(accessToken,session)){
+            session.setAttribute(OAUTH_ACCESS_TOKEN_SESSION_KEY, accessToken);
+        }
 
-        // TODO is it valid?
-        log.debug("Got token/code "+accessToken+"/"+code+" from "+jsonObject);
-        // eg Got token/code 
-        // ya29.GluHBtzZ-R-CaoWMlso6KB6cq3DrbmwX6B3kjMmzWqzU-vO76WjKuNS3Ktog7vt9CJnxSZ63NmqO4p5bg20wl0-M14yO1LuoXNV5JX3qHDmXl2rl-z1LbCPEYJ-o
-        //    /  4/yADFJRSRCxLgZFcpD_KU2jQiCXBGNHTsw0eGZqZ2t6IJJh2O1oWBnBDx4eWl4ZLCRAFJx3QjPYtl7LF9zj_DNlA 
-        // from {
-        //   access_token=ya29.GluHBtzZ-R-CaoWMlso6KB6cq3DrbmwX6B3kjMmzWqzU-vO76WjKuNS3Ktog7vt9CJnxSZ63NmqO4p5bg20wl0-M14yO1LuoXNV5JX3qHDmXl2rl-z1LbCPEYJ-o, 
-        //   expires_in=3600, 
-        //   refresh_token=1/b2Xk2rCVqKFsbz_xePv1tctvihnLoyo0YHsw4YQWK8M, 
-        //   scope=https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/plus.me, 
-        //   token_type=Bearer, 
-        //   id_token=eyJhbGciOiJSUzI1NiIsImtpZCI6Ijc5NzhhOTEzNDcyNjFhMjkxYmQ3MWRjYWI0YTQ2NGJlN2QyNzk2NjYiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJhY2NvdW50cy5nb29nbGUuY29tIiwiYXpwIjoiNzg5MTgyMDEyNTY1LWJ1cmQyNGgzYmMwaW03NGcycWVtaTdsbmlodmZxZDAyLmFwcHMuZ29vZ2xldXNlcmNvbnRlbnQuY29tIiwiYXVkIjoiNzg5MTgyMDEyNTY1LWJ1cmQyNGgzYmMwaW03NGcycWVtaTdsbmlodmZxZDAyLmFwcHMuZ29vZ2xldXNlcmNvbnRlbnQuY29tIiwic3ViIjoiMTA2MDQyNTE3MjU2MTcxNzYyMTU0IiwiaGQiOiJjbG91ZHNvZnRjb3JwLmNvbSIsImVtYWlsIjoiYWxleC5oZW5ldmVsZEBjbG91ZHNvZnRjb3JwLmNvbSIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJhdF9oYXNoIjoiQXpsdHo3YnR2Wk81eTZiMXMtVzRxdyIsImlhdCI6MTU0NjYyNDE2MiwiZXhwIjoxNTQ2NjI3NzYyfQ.E0NWILU7EEHL3GsveVFW1F91sml9iRceWpfVVc9blSKqafAcNwRl08JKT1FXUgfOUvgoYYj6IDIxT4L59-3CObNHS7RtbDJmIk0eWf_h8OFFGTTtd6P2-FTtM-6HVLKkMcKvJHHB07APsqeQj4o3zWY4G3f0QIX6bb424PwxwcDGS6gO8aA9cX2vVyr90h8FgtR9qnbYQxaSrcQNmEmPYHPZiOMzFoxR5WpXhtmPAFc4sMVFjrvQEf8s3GSr6ciMdC7BtKhfBII8s9iYV4LJCRQjxvsCzZ_PfWAZmExNaNOVltfoo5uGVmDPvzCUbSIoPmpj4jpPJVJ0fQtl7E6Tlg}
-        // TODO get the user's ID : https://stackoverflow.com/questions/24442668/google-oauth-api-to-get-users-email-address
-        String user = accessToken;  // wrong, see above
-        session.setAttribute(BrooklynSecurityProviderFilterHelper.AUTHENTICATED_USER_SESSION_ATTRIBUTE, user);
+
         
         return true;
     }
 
-    private boolean validateTokenAgainstOauthServer(String token) throws ClientProtocolException, IOException {
+    private boolean validateTokenAgainstOauthServer(String token, HttpSession session) throws ClientProtocolException, IOException, SecurityProviderDeniedAuthentication {
         // TODO support validation, and run periodically
         
-//        HashMap<String, String> params = new HashMap<String, String>();
-//        params.put(OAUTH_ACCESS_TOKEN_KEY, token);
-//
-//        String body = post(uriTokenInfo, params);
-//        
-//        Map<?,?> jsonObject = null;
-//        // get the access token from json and request info from Google
-//        try {
-//            jsonObject = (Map<?,?>) Yamls.parseAll(body).iterator().next();
-//            LOG.info("Parsed '"+body+"' as "+jsonObject);
-//        } catch (Exception e) {
-//            Exceptions.propagateIfFatal(e);
-//            LOG.info("Unable to parse: '"+body+"'");
-//            throw new RuntimeException("Unable to parse json " + body, e);
-//        }
-//
-//        if (!clientId.equals(jsonObject.get(audience))) {
-//            LOG.warn("Oauth not meant for this client ("+clientId+"), redirecting user to login again: "+jsonObject);
-//            return redirectUserToOauthLoginUi();
-//        }
-//        
+        HashMap<String, String> params = new HashMap<String, String>();
+        params.put(accessTokenResponseKey, token);
+
+        String body = post(uriTokenInfo, params);
+
+        Map<?,?> jsonObject = null;
+        // get the access token from json and request info from Google
+        try {
+            jsonObject = (Map<?,?>) Yamls.parseAll(body).iterator().next();
+            @SuppressWarnings("unchecked")
+            String email = Strings.toString( ((Map<String,Object>) Yamls.parseAll(body).iterator().next()).get("email") );
+            if(!isEmailAuthorized(email)){
+                throw new SecurityProviderDeniedAuthentication();
+            }
+//            String user = Strings.toString( ((Map<String,Object>) Yamls.parseAll(body).iterator().next()).get("name") );
+            session.setAttribute(BrooklynSecurityProviderFilterHelper.AUTHENTICATED_USER_SESSION_ATTRIBUTE, email);
+            log.trace("Parsed '{}' as {}", body ,jsonObject);
+        } catch (Exception e) {
+            Exceptions.propagateIfFatal(e);
+            log.trace("Unable to parse: '{}'",body);
+            throw new RuntimeException("Unable to parse json " + body, e);
+        }
+
+        if (!clientId.equals(jsonObject.get(audience))) {
+            log.trace("Oauth not meant for this client ({}), redirecting user to login again: {}",clientId, jsonObject);
+            return redirectUserToOauthLoginUi();
+        }
+
 //        // TODO
 //        // if (isTokenExpiredOrNearlySo(...) { ... }
         
         return true;
+    }
+
+    private boolean isEmailAuthorized(String email) {
+        String domain="";
+        if(Strings.isNonBlank(email)){
+            if(email.contains("@")){
+                domain=email.substring(email.lastIndexOf("@") +1);
+            }
+        }
+        return (authorizedDomains.contains(domain) || authorizedUsers.contains(email));
     }
 
     // TODO these http methods need tidying
@@ -290,26 +311,15 @@ public class OauthSecurityProvider implements SecurityProvider {
         String state=Identifiers.makeRandomId(12); //should be stored in session
         StringBuilder oauthUrl = new StringBuilder().append(uriAuthorize)
                 .append("?response_type=").append("code")
-                .append("&client_id=").append(clientId) // the client id from the api console registration
-                .append("&redirect_uri=").append(callbackUri) // the servlet that github redirects to after
-                // authorization
-//                .append("&scope=").append("user public_repo")
-                .append("&scope=openid%20email") // scope is the api permissions we
+                .append("&client_id=").append(clientId)
+                .append("&redirect_uri=").append(callbackUri)
+                .append("&scope=openid%20email")
                 .append("&state=").append(state)
-                .append("&access_type=offline") // here we are asking to access to user's data while they are not
-                // signed in
-                .append("&approval_prompt=force"); // this requires them to verify which account to use, if they are
-        // already signed in
-
-        // just for look inside
-//        Collection<String> originalHeaders = response.getHeaderNames();
+                .append("&access_type=offline")
+                .append("&approval_prompt=force");
 
         throw new SecurityProviderDeniedAuthentication(
             Response.status(Status.FOUND).header(HttpHeader.LOCATION.asString(), oauthUrl.toString()).build());
-//        response.addHeader("Origin", "http://localhost.io:8081");
-//        response.addHeader("Access-Control-Allow-Origin", "*");
-//        response.addHeader("Access-Control-Request-Method", "GET, POST");
-//        response.addHeader("Access-Control-Request-Headers", "origin, x-requested-with");
     }
 
     private Request getJettyRequest() {
