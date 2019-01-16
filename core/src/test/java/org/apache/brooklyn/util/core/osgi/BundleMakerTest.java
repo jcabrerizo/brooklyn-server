@@ -250,7 +250,7 @@ public class BundleMakerTest extends BrooklynMgmtUnitTestSupport {
         generatedJar = bundleMaker.createTempBundle("test", manifest,
             ImmutableMap.of(new ZipEntry("myfile.txt"), new ByteArrayInputStream("mytext".getBytes())));
         assertJarContents(generatedJar, ImmutableMap.of("myfile.txt", "mytext"), true);
-        
+
         @SuppressWarnings("deprecation")
         Bundle bundle = bundleMaker.installBundle(generatedJar, false);
         assertEquals(bundle.getSymbolicName(), "myname");

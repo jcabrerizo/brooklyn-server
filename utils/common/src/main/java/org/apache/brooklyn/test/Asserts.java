@@ -898,7 +898,13 @@ public class Asserts {
     public static <T> T succeedsEventually(Callable<T> c) {
         return succeedsEventually(ImmutableMap.<String,Object>of(), c);
     }
-    
+
+    public static void assertEqualsIgnoringOsDependentNewlines(String s1, String s2) {
+        s1 = Strings.replaceAllRegex(s1, "\r\n", "\n");
+        s2 = Strings.replaceAllRegex(s2, "\r\n", "\n");
+        assertEquals(s1, s2);
+    }
+
     // FIXME duplication with TestUtils.BooleanWithMessage
     public static class BooleanWithMessage {
         boolean value; String message;
