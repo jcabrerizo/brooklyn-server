@@ -31,6 +31,7 @@ public class BrooklynWebConfig {
 
     public final static String BASE_NAME = "brooklyn.webconsole";
     public final static String BASE_NAME_SECURITY = BASE_NAME+".security";
+    public final static String BASE_NAME_OAUTH = BASE_NAME_SECURITY+".oauth";
 
     /**
      * The session attribute set to indicate the remote address of the HTTP request.
@@ -166,4 +167,27 @@ public class BrooklynWebConfig {
         return config.findKeysPresent(ConfigPredicates.nameStartsWith(BASE_NAME_SECURITY)).isEmpty();
     }
 
+    public final static ConfigKey<String> SECURITY_OAUTH_TOKEN_URL = ConfigKeys.newStringConfigKey(
+            BASE_NAME_OAUTH+".tokenUrl", "URL to get the user token");
+
+    public final static ConfigKey<String> SECURITY_OAUTH_AUTHORIZE_URL = ConfigKeys.newStringConfigKey(
+            BASE_NAME_OAUTH+".authorizeUrl", "URL to authorize the user");
+
+    public final static ConfigKey<String> SECURITY_OAUTH_VALIDATE_URL = ConfigKeys.newStringConfigKey(
+            BASE_NAME_OAUTH+".validateUrl", "URL to validate the token");
+
+    public final static ConfigKey<String> SECURITY_OAUTH_CLIENT_ID = ConfigKeys.newStringConfigKey(
+            BASE_NAME_OAUTH+".clientId", "Client ID registered in the authentication server");
+
+    public final static ConfigKey<String> SECURITY_OAUTH_CLIENT_SECRET= ConfigKeys.newStringConfigKey(
+            BASE_NAME_OAUTH+".clientSecret", "Client Secret to validate the token");
+
+    public final static ConfigKey<String> SECURITY_OAUTH_CALLBACK= ConfigKeys.newStringConfigKey(
+            BASE_NAME_OAUTH+".callback", "Callback URL after authentication");
+
+    public final static ConfigKey<String> SECURITY_OAUTH_AUTHORIZED_USERS= ConfigKeys.newStringConfigKey(
+            BASE_NAME_OAUTH+".users", "Comma separated list of users authorized");
+
+    public final static ConfigKey<String> SECURITY_OAUTH_AUTHORIZED_DOMAINS= ConfigKeys.newStringConfigKey(
+            BASE_NAME_OAUTH+".domains", "Comma separated list of domains authorized");
 }
