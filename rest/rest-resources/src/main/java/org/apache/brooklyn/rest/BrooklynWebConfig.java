@@ -190,4 +190,19 @@ public class BrooklynWebConfig {
 
     public final static ConfigKey<String> SECURITY_OAUTH_AUTHORIZED_DOMAINS= ConfigKeys.newStringConfigKey(
             BASE_NAME_OAUTH+".domains", "Comma separated list of domains authorized");
+
+    public final static ConfigKey<String> SECURITY_OAUTH_AUDIENCE= ConfigKeys.newStringConfigKey(
+            BASE_NAME_OAUTH+".audience", "Oauth audience", "audience");
+
+    public final static ConfigKey<String> SECURITY_OAUTH_TOKEN_RESPONSE_KEY= ConfigKeys.newStringConfigKey(
+            BASE_NAME_OAUTH+".tokenResponseKey", "Key name of the token in the servers response", "access_token");
+
+    public final static ConfigKey<String> SECURITY_OAUTH_CODE_INPUT_PARAMETER_NAME= ConfigKeys.newStringConfigKey(
+            BASE_NAME_OAUTH+".codeInputParameterName", "Name of the parameter to get the code from the redirection", "code");
+
+    public final static ConfigKey<String> SECURITY_OAUTH_CODE_OUTPUT_PARAMETER_NAME= ConfigKeys.newStringConfigKey(
+            BASE_NAME_OAUTH+".codeOutputParameterName", "Name of the parameter to sent the request for authenticate", "code");
+
+    public final static ConfigKey<String> SECURITY_OAUTH_SCOPE= ConfigKeys.newStringConfigKey(
+            BASE_NAME_OAUTH+".scope", "Oauth scope requested");
 }
