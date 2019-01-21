@@ -30,6 +30,10 @@ import com.google.common.base.Preconditions;
 import org.apache.brooklyn.api.mgmt.ManagementContext;
 import org.apache.brooklyn.rest.filter.BrooklynSecurityProviderFilterHelper;
 import org.apache.brooklyn.util.exceptions.Exceptions;
+import org.apache.brooklyn.util.http.executor.HttpExecutor;
+import org.apache.brooklyn.util.http.executor.HttpRequest;
+import org.apache.brooklyn.util.http.executor.apacheclient.HttpExecutorImpl;
+import org.apache.brooklyn.util.stream.Streams;
 import org.apache.brooklyn.util.text.Identifiers;
 import org.apache.brooklyn.util.text.Strings;
 import org.apache.brooklyn.util.yaml.Yamls;
@@ -261,8 +265,6 @@ public class OauthSecurityProvider implements SecurityProvider {
         }catch(SecurityProviderDeniedAuthentication e){
             log.trace("OauthSecurityProvider.retrieveTokenForAuthCodeFromOauthServer User not authorized '{}'",user);
             throw e;
-//            Exceptions.propagateIfFatal(e);
-//            throw new RuntimeException("User not authorized " + body, e);
         }
         catch (Exception e) {
             Exceptions.propagateIfFatal(e);
