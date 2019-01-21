@@ -24,6 +24,8 @@ import javax.annotation.Priority;
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.container.ContainerRequestContext;
 import javax.ws.rs.container.ContainerRequestFilter;
+import javax.ws.rs.container.ContainerResponseContext;
+import javax.ws.rs.container.ContainerResponseFilter;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
@@ -33,6 +35,7 @@ import javax.ws.rs.ext.Provider;
 
 import org.apache.brooklyn.api.mgmt.ManagementContext;
 import org.apache.brooklyn.rest.security.provider.SecurityProvider.SecurityProviderDeniedAuthentication;
+import org.apache.brooklyn.rest.util.CrossBundleSessionSharer;
 import org.eclipse.jetty.http.HttpHeader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,7 +43,7 @@ import org.slf4j.LoggerFactory;
 /** See {@link BrooklynSecurityProviderFilterHelper} */
 @Provider
 @Priority(100)
-public class BrooklynSecurityProviderFilterJersey implements ContainerRequestFilter {
+public class BrooklynSecurityProviderFilterJersey implements ContainerRequestFilter, ContainerResponseFilter {
 
     private static final Logger log = LoggerFactory.getLogger(BrooklynSecurityProviderFilterJersey.class);
 
@@ -59,8 +62,10 @@ public class BrooklynSecurityProviderFilterJersey implements ContainerRequestFil
         } catch (SecurityProviderDeniedAuthentication e) {
             Response rin = e.getResponse();
             if (rin==null) rin = Response.status(Status.UNAUTHORIZED).build();
-            
-            if (rin.getStatus()==Status.FOUND.getStatusCode()) {
+
+            // if the security provider needs a redirect, the other filter (javax) will respond so that the browser redirects;
+            // however the REST API redirect won't be understood by clients so we intercept that and return a plain old 401
+            if (rin.getStatus()==Status.FOUND.getStatusCode() || rin.getStatus()==Status.TEMPORARY_REDIRECT.getStatusCode()) {
                 String location = rin.getHeaderString(HttpHeader.LOCATION.asString());
                 if (location!=null) {
                     log.trace("Redirect to {} for authentication",location);
@@ -75,5 +80,9 @@ public class BrooklynSecurityProviderFilterJersey implements ContainerRequestFil
         }
     }
 
+    @Override
+    public void filter(ContainerRequestContext containerRequestContext, ContainerResponseContext containerResponseContext) throws IOException {
+        CrossBundleSessionSharer.failIfMultipleSessions(webRequest, mgmtC.getContext(ManagementContext.class));
+    }
 }
 

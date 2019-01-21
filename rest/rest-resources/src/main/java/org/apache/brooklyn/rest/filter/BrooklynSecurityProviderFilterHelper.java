@@ -32,6 +32,7 @@ import org.apache.brooklyn.rest.BrooklynWebConfig;
 import org.apache.brooklyn.rest.security.provider.DelegatingSecurityProvider;
 import org.apache.brooklyn.rest.security.provider.SecurityProvider;
 import org.apache.brooklyn.rest.security.provider.SecurityProvider.SecurityProviderDeniedAuthentication;
+import org.apache.brooklyn.rest.util.CrossBundleSessionSharer;
 import org.apache.brooklyn.util.collections.MutableSet;
 import org.apache.brooklyn.util.text.StringEscapes;
 import org.apache.commons.codec.binary.Base64;
@@ -72,8 +73,6 @@ public class BrooklynSecurityProviderFilterHelper {
      * or a null user (no login) may be permitted)
      */
     public static final String AUTHENTICATED_USER_SESSION_ATTRIBUTE = "brooklyn.user";
-
-    public static Set<SessionHandler> SESSION_MANAGER_CACHE = MutableSet.of();
     
     private static final Logger log = LoggerFactory.getLogger(BrooklynSecurityProviderFilterHelper.class);
 
@@ -82,43 +81,9 @@ public class BrooklynSecurityProviderFilterHelper {
     
     public static final String BASIC_REALM_HEADER_VALUE = "BASIC realm="+StringEscapes.JavaStringEscapes.wrapJavaString(BASIC_REALM_NAME);
     
-    /* check all contexts for sessions; surprisingly hard to configure session management for karaf/pax web container.
-     * they _really_ want each servlet to have their own sessions. how you're meant to do oauth for multiple servlets i don't know! */
-    public HttpSession getSession(HttpServletRequest webRequest, ManagementContext mgmt, boolean create) {
-        String requestedSessionId = webRequest.getRequestedSessionId();
-        
-        log.trace("SESSION for {}, wants session {}", webRequest.getRequestURI(), requestedSessionId);
-        
-        if (webRequest instanceof Request) {
-            SessionHandler sm = ((Request)webRequest).getSessionHandler();
-            boolean added = SESSION_MANAGER_CACHE.add( sm );
-            log.trace("SESSION MANAGER found for {}: {} (added={})", webRequest.getRequestURI(), sm, added);
-        } else {
-            log.trace("SESSION MANAGER NOT found for {}: {}", webRequest.getRequestURI(), webRequest);
-        }
-        
-        if (requestedSessionId!=null) {
-            for (SessionHandler m: SESSION_MANAGER_CACHE) {
-                HttpSession s = m.getHttpSession(requestedSessionId);
-                if (s!=null) {
-                    log.trace("SESSION found for {}: {} (valid={})", webRequest.getRequestURI(), s, m.isValid(s));
-                    return s;
-                }
-            }
-        }
-        
-        if (create) {
-            HttpSession session = webRequest.getSession(true);
-            log.trace("SESSION creating for {}: {}", webRequest.getRequestURI(), session);
-            return session;
-        }
-        
-        return null;  // not found
-    }
-    
     public void run(HttpServletRequest webRequest, ManagementContext mgmt) throws SecurityProviderDeniedAuthentication {
         SecurityProvider provider = getProvider(mgmt);
-        HttpSession session = getSession(webRequest, mgmt, false);
+        HttpSession session = CrossBundleSessionSharer.getSession(webRequest, mgmt, false);
         
         if (provider.isAuthenticated(session)) {
             return;
@@ -143,7 +108,7 @@ public class BrooklynSecurityProviderFilterHelper {
         
         if (session==null) {
             // only create the session if an auth string is supplied
-            session = getSession(webRequest, mgmt, true);
+            session = CrossBundleSessionSharer.getSession(webRequest, mgmt, true);
         }
         session.setAttribute(BrooklynWebConfig.REMOTE_ADDRESS_SESSION_ATTRIBUTE, webRequest.getRemoteAddr());
         

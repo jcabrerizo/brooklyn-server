@@ -33,6 +33,7 @@ import javax.ws.rs.core.Response.Status;
 
 import org.apache.brooklyn.api.mgmt.ManagementContext;
 import org.apache.brooklyn.rest.security.provider.SecurityProvider.SecurityProviderDeniedAuthentication;
+import org.apache.brooklyn.rest.util.CrossBundleSessionSharer;
 import org.apache.brooklyn.rest.util.ManagementContextProvider;
 import org.apache.brooklyn.util.text.Strings;
 import org.slf4j.Logger;
@@ -63,6 +64,7 @@ public class BrooklynSecurityProviderFilterJavax implements Filter {
 
             chain.doFilter(request, response);
 
+            CrossBundleSessionSharer.failIfMultipleSessions((HttpServletRequest) request, mgmt);
         } catch (SecurityProviderDeniedAuthentication e) {
             log.trace("BrooklynSecurityProviderFilterJavax.doFilter caught SecurityProviderDeniedAuthentication", e);
             HttpServletResponse rout = ((HttpServletResponse)response);

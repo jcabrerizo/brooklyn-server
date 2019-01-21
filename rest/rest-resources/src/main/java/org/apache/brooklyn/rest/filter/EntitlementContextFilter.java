@@ -32,9 +32,12 @@ import javax.ws.rs.core.Context;
 import javax.ws.rs.core.SecurityContext;
 import javax.ws.rs.ext.Provider;
 
+import org.apache.brooklyn.api.mgmt.ManagementContext;
 import org.apache.brooklyn.api.mgmt.entitlement.EntitlementContext;
 import org.apache.brooklyn.core.mgmt.entitlement.Entitlements;
 import org.apache.brooklyn.core.mgmt.entitlement.WebEntitlementContext;
+import org.apache.brooklyn.rest.util.CrossBundleSessionSharer;
+import org.apache.brooklyn.rest.util.ManagementContextProvider;
 import org.apache.brooklyn.util.text.Strings;
 
 @Provider
@@ -56,7 +59,8 @@ public class EntitlementContextFilter implements ContainerRequestFilter, Contain
 
             // now look in session attribute - because principals hard to set from javax filter
             if (request!=null) {
-                HttpSession s = request.getSession(false);
+                ManagementContext mgmt= new ManagementContextProvider(request.getServletContext()).getManagementContext();
+                HttpSession s = CrossBundleSessionSharer.getSession(request, mgmt, false);
                 if (s!=null) {
                     userName = Strings.toString(s.getAttribute(
                             BrooklynSecurityProviderFilterHelper.AUTHENTICATED_USER_SESSION_ATTRIBUTE));

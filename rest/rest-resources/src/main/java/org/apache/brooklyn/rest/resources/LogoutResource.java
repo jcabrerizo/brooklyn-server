@@ -22,6 +22,7 @@ import java.net.URI;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpSession;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
@@ -31,6 +32,8 @@ import org.apache.brooklyn.core.mgmt.entitlement.Entitlements;
 import org.apache.brooklyn.core.mgmt.entitlement.WebEntitlementContext;
 import org.apache.brooklyn.rest.api.LogoutApi;
 import org.apache.brooklyn.rest.filter.BrooklynSecurityProviderFilterHelper;
+import org.apache.brooklyn.rest.util.CrossBundleSessionSharer;
+import org.apache.brooklyn.rest.util.ManagementContextProvider;
 import org.apache.brooklyn.util.exceptions.Exceptions;
 
 public class LogoutResource extends AbstractBrooklynRestResource implements LogoutApi {
@@ -80,14 +83,19 @@ public class LogoutResource extends AbstractBrooklynRestResource implements Logo
     }
 
     private void doLogout() {
+        HttpSession s1 = CrossBundleSessionSharer.getSession(req, new ManagementContextProvider(req.getServletContext()).getManagementContext(), false);
+        HttpSession s2 = req.getSession(false);
         try {
-            req.getSession().removeAttribute(BrooklynSecurityProviderFilterHelper.AUTHENTICATED_USER_SESSION_ATTRIBUTE);
+
+
+            if (s1!=null) s1.removeAttribute(BrooklynSecurityProviderFilterHelper.AUTHENTICATED_USER_SESSION_ATTRIBUTE);
+            if (s2!=null) s2.removeAttribute(BrooklynSecurityProviderFilterHelper.AUTHENTICATED_USER_SESSION_ATTRIBUTE);
             req.logout();
         } catch (ServletException e) {
             Exceptions.propagate(e);
         }
-
-        req.getSession().invalidate();
+        if (s1!=null) s1.invalidate();
+        if (s2!=null) s2.invalidate();
     }
 
 }

@@ -43,6 +43,12 @@ public interface SecurityProvider {
      * if a custom response is required. It can include a response in that exception,
      * e.g. to provide more information or supply a redirect. */
     public boolean authenticate(@Nonnull HttpSession session, String user, String pass) throws SecurityProviderDeniedAuthentication;
+
+    /**
+     * Framework / UI doesn't call this method
+     * @param session
+     * @return
+     */
     public boolean logout(HttpSession session);
     
     public static class SecurityProviderDeniedAuthentication extends Exception {

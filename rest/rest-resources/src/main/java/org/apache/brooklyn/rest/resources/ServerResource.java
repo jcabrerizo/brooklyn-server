@@ -30,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpSession;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
@@ -61,8 +62,11 @@ import org.apache.brooklyn.rest.api.ServerApi;
 import org.apache.brooklyn.rest.domain.BrooklynFeatureSummary;
 import org.apache.brooklyn.rest.domain.HighAvailabilitySummary;
 import org.apache.brooklyn.rest.domain.VersionSummary;
+import org.apache.brooklyn.rest.filter.BrooklynSecurityProviderFilterHelper;
 import org.apache.brooklyn.rest.transform.BrooklynFeatureTransformer;
 import org.apache.brooklyn.rest.transform.HighAvailabilityTransformer;
+import org.apache.brooklyn.rest.util.CrossBundleSessionSharer;
+import org.apache.brooklyn.rest.util.ManagementContextProvider;
 import org.apache.brooklyn.rest.util.WebResourceUtils;
 import org.apache.brooklyn.util.collections.MutableMap;
 import org.apache.brooklyn.util.core.ResourceUtils;
@@ -76,6 +80,7 @@ import org.apache.brooklyn.util.text.Strings;
 import org.apache.brooklyn.util.time.CountdownTimer;
 import org.apache.brooklyn.util.time.Duration;
 import org.apache.brooklyn.util.time.Time;
+import org.eclipse.jetty.server.session.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -378,7 +383,7 @@ public class ServerResource extends AbstractBrooklynRestResource implements Serv
     
     @Override
     public Map<String,Object> getUpExtended() {
-        request.getSession();
+        CrossBundleSessionSharer.getSession(request,new ManagementContextProvider(request.getServletContext()).getManagementContext(),false);
         return MutableMap.<String,Object>of(
             "up", isUp(),
             "shuttingDown", isShuttingDown(),
@@ -457,12 +462,13 @@ public class ServerResource extends AbstractBrooklynRestResource implements Serv
 
     @Override
     public String getUser() {
-        request.getSession();
+        HttpSession session= CrossBundleSessionSharer.getSession(request,new ManagementContextProvider(request.getServletContext()).getManagementContext(),false);;
         EntitlementContext entitlementContext = Entitlements.getEntitlementContext();
         if (entitlementContext!=null && entitlementContext.user()!=null){
             return (String) WebResourceUtils.getValueForDisplay(mapper(), entitlementContext.user(), true, true);
         } else {
-            return null; //User can be null if no authentication was requested
+            //User can be null if no authentication was requested
+            return (String) session.getAttribute(BrooklynSecurityProviderFilterHelper.AUTHENTICATED_USER_SESSION_ATTRIBUTE);
         }
     }
 
