@@ -30,10 +30,6 @@ import com.google.common.base.Preconditions;
 import org.apache.brooklyn.api.mgmt.ManagementContext;
 import org.apache.brooklyn.rest.filter.BrooklynSecurityProviderFilterHelper;
 import org.apache.brooklyn.util.exceptions.Exceptions;
-import org.apache.brooklyn.util.http.executor.HttpExecutor;
-import org.apache.brooklyn.util.http.executor.HttpRequest;
-import org.apache.brooklyn.util.http.executor.apacheclient.HttpExecutorImpl;
-import org.apache.brooklyn.util.stream.Streams;
 import org.apache.brooklyn.util.text.Identifiers;
 import org.apache.brooklyn.util.text.Strings;
 import org.apache.brooklyn.util.yaml.Yamls;
@@ -255,7 +251,7 @@ public class OauthSecurityProvider implements SecurityProvider {
             Map<String,String> info = Yamls.getAs( Yamls.parseAll(body), Map.class );
             email = info.get("email");
             if(!isEmailAuthorized(email)){
-                throw new SecurityProviderDeniedAuthorization();
+                throw new SecurityProviderDeniedAuthentication();
             }
             user = info.get("name");
             if(Strings.isBlank(user)){
@@ -263,7 +259,7 @@ public class OauthSecurityProvider implements SecurityProvider {
             }
             session.setAttribute(BrooklynSecurityProviderFilterHelper.AUTHENTICATED_USER_SESSION_ATTRIBUTE, user);
             log.trace("OauthSecurityProvider.retrieveTokenForAuthCodeFromOauthServer Parsed '{}' as {}", body ,jsonObject);
-        }catch(SecurityProviderDeniedAuthorization e){
+        }catch(SecurityProviderDeniedAuthentication e){
             Exceptions.propagateIfFatal(e);
             log.trace("OauthSecurityProvider.retrieveTokenForAuthCodeFromOauthServer User not authorized '{}'",user);
             throw new RuntimeException("User not authorized " + body, e);
