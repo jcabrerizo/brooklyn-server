@@ -27,8 +27,8 @@ public class BrooklynOauthSecurityConfig {
     public final static ConfigKey<String> SECURITY_OAUTH_TOKEN_URL = ConfigKeys.newStringConfigKey(
             BASE_NAME_OAUTH+".tokenUrl", "URL to get the user token");
 
-    public final static ConfigKey<String> SECURITY_OAUTH_AUTHORIZE_URL = ConfigKeys.newStringConfigKey(
-            BASE_NAME_OAUTH+".authorizeUrl", "URL to authorize the user");
+    public final static ConfigKey<String> SECURITY_OAUTH_AUTHENTICATE_URL = ConfigKeys.newStringConfigKey(
+            BASE_NAME_OAUTH+".authenticateUrl", "URL to authorize the user");
 
     public final static ConfigKey<String> SECURITY_OAUTH_VALIDATE_URL = ConfigKeys.newStringConfigKey(
             BASE_NAME_OAUTH+".validateUrl", "URL to validate the token");

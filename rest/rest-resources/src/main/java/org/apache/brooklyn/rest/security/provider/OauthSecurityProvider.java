@@ -26,6 +26,7 @@ import javax.servlet.http.HttpSession;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 import com.google.gson.Gson;
@@ -77,8 +78,13 @@ public class OauthSecurityProvider implements SecurityProvider {
 
     // google test data - hard-coded for now
     private String uriGetToken;
-    private String uriAuthorize;
+    private String uriAuthenticate;
     private String uriTokenInfo;
+    @VisibleForTesting
+    public String getUriTokenInfo() {
+        return uriTokenInfo;
+    }
+
     private String clientId;
     private String clientSecret;
     private String scope;
@@ -99,8 +105,8 @@ public class OauthSecurityProvider implements SecurityProvider {
         uriGetToken = mgmt.getConfig().getConfig(SECURITY_OAUTH_TOKEN_URL);
         Preconditions.checkNotNull(uriGetToken, "URI to get token must be set: "+SECURITY_OAUTH_TOKEN_URL.getName());
 
-        uriAuthorize = mgmt.getConfig().getConfig(SECURITY_OAUTH_AUTHORIZE_URL);
-        Preconditions.checkNotNull(uriAuthorize, "URI to authorize must be set: "+SECURITY_OAUTH_AUTHORIZE_URL.getName());
+        uriAuthenticate = mgmt.getConfig().getConfig(SECURITY_OAUTH_AUTHENTICATE_URL);
+        Preconditions.checkNotNull(uriAuthenticate, "URI to authorize must be set: "+ SECURITY_OAUTH_AUTHENTICATE_URL.getName());
 
         uriTokenInfo = mgmt.getConfig().getConfig(SECURITY_OAUTH_VALIDATE_URL);
         Preconditions.checkNotNull(uriTokenInfo, "URI to validate the current token must be set: "+SECURITY_OAUTH_VALIDATE_URL.getName());
@@ -140,7 +146,7 @@ public class OauthSecurityProvider implements SecurityProvider {
     @Override
     public boolean isAuthenticated(HttpSession session) {
         // TODO tidy log messages
-        log.trace("OauthSecurityProvider.isAuthenticated. RequestURI: {} | Session: {} ",getJettyRequest().getRequestURI(),session);
+        log.trace("OauthSecurityProvider.isAuthenticated. RequestURI: {} | Session: {} ",getJettyRequest()==null?"null":getJettyRequest().getRequestURI(),session);
         if(session==null || // no session
                 Strings.isNonBlank(getCodeFromRequest()) || // arriving just after login on server
                 Strings.isBlank((String) session.getAttribute(OAUTH_ACCESS_TOKEN_SESSION_KEY)) // not having a saved token
@@ -164,7 +170,7 @@ public class OauthSecurityProvider implements SecurityProvider {
         // Redirection from the authenticator server
         String code = getCodeFromRequest();
         // Getting token, if exists, from the current session
-        String token = (String) session.getAttribute(OAUTH_ACCESS_TOKEN_SESSION_KEY);
+        String token = getTokenFromSession(session);
         
         try {
             if (Strings.isNonBlank(code)) {
@@ -185,8 +191,18 @@ public class OauthSecurityProvider implements SecurityProvider {
         }
     }
 
+    private String getTokenFromSession(HttpSession session) {
+        if(session==null){
+            return  null;
+        }
+        return (String) session.getAttribute(OAUTH_ACCESS_TOKEN_SESSION_KEY);
+    }
+
     private String getCodeFromRequest() {
         Request request= getJettyRequest();
+        if(request==null){
+            return null;
+        }
         return request.getParameter(codeInputParameter);
     }
 
@@ -204,6 +220,26 @@ public class OauthSecurityProvider implements SecurityProvider {
     }
 
     private boolean retrieveTokenForAuthCodeFromOauthServer(HttpSession session, String code) throws ClientProtocolException, IOException, ServletException, SecurityProviderDeniedAuthentication {
+        // get the access token from json and request info from Google
+        String accessToken=Strings.EMPTY;
+        try {
+            accessToken =  requestTokenWithCode(code);
+        } catch (Exception e) {
+            Exceptions.propagateIfFatal(e);
+            log.trace("OauthSecurityProvider.retrieveTokenForAuthCodeFromOauthServer");
+            return redirectUserToOauthLoginUi();
+        }
+
+        // Put token in session
+        if(validateTokenAgainstOauthServer(accessToken,session)){
+            session.setAttribute(OAUTH_ACCESS_TOKEN_SESSION_KEY, accessToken);
+            return true;
+        }
+        return false; // not validated
+    }
+
+    @VisibleForTesting
+    public String requestTokenWithCode(String code) throws IOException {
         // get the access token by post to Google
         HashMap<String, String> params = new HashMap<String, String>();
         params.put(codeOutputParameter, code);
@@ -213,27 +249,9 @@ public class OauthSecurityProvider implements SecurityProvider {
         params.put("grant_type", "authorization_code");
 
         String body = httpPost(uriGetToken, params);
-
-        Map<?,?> jsonObject;
-
-        // get the access token from json and request info from Google
-        try {
-            jsonObject = (Map<?,?>) Yamls.parseAll(body).iterator().next();
-            log.trace("OauthSecurityProvider.retrieveTokenForAuthCodeFromOauthServer Parsed '"+body+"' as "+jsonObject);
-        } catch (Exception e) {
-            Exceptions.propagateIfFatal(e);
-            log.trace("OauthSecurityProvider.retrieveTokenForAuthCodeFromOauthServer Unable to parse: '"+body+"'");
-            // throw new RuntimeException("Unable to parse json " + body);
-            return redirectUserToOauthLoginUi();
-        }
-
-        // Put token in session
-        String accessToken = (String) jsonObject.get(accessTokenResponseKey);
-        if(validateTokenAgainstOauthServer(accessToken,session)){
-            session.setAttribute(OAUTH_ACCESS_TOKEN_SESSION_KEY, accessToken);
-            return true;
-        }
-        return false; // not validated
+        final Map<?, ?> jsonObject = string2map(body);
+        log.trace("OauthSecurityProvider.retrieveTokenForAuthCodeFromOauthServer Parsed '"+body+"' as "+jsonObject);
+        return (String) jsonObject.get(accessTokenResponseKey);
     }
 
     private boolean validateTokenAgainstOauthServer(String token, HttpSession session) throws IOException,SecurityProviderDeniedAuthentication {
@@ -246,7 +264,7 @@ public class OauthSecurityProvider implements SecurityProvider {
         String user="";
         String email="";
         try {
-            jsonObject = (Map<?,?>) Yamls.parseAll(body).iterator().next();
+            jsonObject = string2map(body);
             @SuppressWarnings("unchecked")
             Map<String,String> info = Yamls.getAs( Yamls.parseAll(body), Map.class );
             email = info.get("email");
@@ -269,10 +287,14 @@ public class OauthSecurityProvider implements SecurityProvider {
             throw new RuntimeException("Unable to parse json " + body, e);
         }
 
-//        // TODO
-//        // if (isTokenExpiredOrNearlySo(...) { ... }
+//        TODO
+//        if (isTokenExpiredOrNearlySo(...) { ... }
         
         return true;
+    }
+
+    private Map<?, ?> string2map(String body) {
+        return (Map<?, ?>) Yamls.parseAll(body).iterator().next();
     }
 
     private boolean isEmailAuthorized(String email) {
@@ -286,6 +308,7 @@ public class OauthSecurityProvider implements SecurityProvider {
     }
 
     // makes a GET request to url and returns body as a string
+    @VisibleForTesting
     public String httpGet(String url, String token) throws ClientProtocolException, IOException {
         Map<String, String> headers = ImmutableMap.<String, String>builder().put("Authorization", "Bearer "+token)
                 .build();
@@ -295,6 +318,7 @@ public class OauthSecurityProvider implements SecurityProvider {
     
     // makes a POST request to url with form parameters and returns body as a
     // string
+    @VisibleForTesting
     public String httpPost(String url, Map<String, String> formParameters) throws ClientProtocolException, IOException {
         String body = gson.toJson(formParameters);
         HttpToolResponse response = HttpTool.httpPost(HttpTool.httpClientBuilder().build(),
@@ -306,7 +330,7 @@ public class OauthSecurityProvider implements SecurityProvider {
 
     private boolean redirectUserToOauthLoginUi() throws IOException, SecurityProviderDeniedAuthentication {
         String state=Identifiers.makeRandomId(12); //should be stored in session
-        StringBuilder oauthUrl = new StringBuilder().append(uriAuthorize)
+        StringBuilder oauthUrl = new StringBuilder().append(uriAuthenticate)
                 .append("?response_type=").append(codeInputParameter)
                 .append("&client_id=").append(clientId)
                 .append("&redirect_uri=").append(callbackUri)
