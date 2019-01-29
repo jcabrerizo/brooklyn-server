@@ -19,8 +19,6 @@
 package org.apache.brooklyn.rest.security;
 
 import org.apache.brooklyn.core.internal.BrooklynProperties;
-import org.apache.brooklyn.core.mgmt.entitlement.Entitlements;
-import org.apache.brooklyn.core.mgmt.entitlement.WebEntitlementContext;
 import org.apache.brooklyn.rest.BrooklynOauthSecurityConfig;
 import org.apache.brooklyn.rest.BrooklynWebConfig;
 import org.apache.brooklyn.rest.filter.*;
@@ -29,8 +27,6 @@ import org.apache.brooklyn.rest.testing.BrooklynRestResourceTest;
 import org.apache.brooklyn.util.text.Strings;
 import org.apache.cxf.jaxrs.JAXRSServerFactoryBean;
 import org.apache.cxf.jaxrs.client.WebClient;
-import org.apache.http.HttpStatus;
-import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.server.session.SessionHandler;
 import org.testng.annotations.Test;
 
@@ -40,14 +36,16 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
 
-public class OauthSecurityProviderTest  extends BrooklynRestResourceTest {
-    public static class TestResource {
+    public class OauthSecurityProviderTest  extends BrooklynRestResourceTest {
+
+        public static final String AUTHENTICATION_ENDPOINT = "https://accounts.google.com/o/oauth2/auth";
+
+        public static class TestResource {
         @GET
         @Path("/test")
         public String test() {
-//            WebEntitlementContext context = (WebEntitlementContext)Entitlements.getEntitlementContext();
-//            return context.user();
             return "test";
         }
     }
@@ -56,7 +54,7 @@ public class OauthSecurityProviderTest  extends BrooklynRestResourceTest {
     protected void configureCXF(JAXRSServerFactoryBean sf) {
         BrooklynProperties props = (BrooklynProperties)getManagementContext().getConfig();
         props.put(BrooklynOauthSecurityConfig.SECURITY_OAUTH_TOKEN_URL, "https://accounts.google.com/o/oauth2/token");
-        props.put(BrooklynOauthSecurityConfig.SECURITY_OAUTH_AUTHORIZE_URL, "https://accounts.google.com/o/oauth2/auth");
+        props.put(BrooklynOauthSecurityConfig.SECURITY_OAUTH_AUTHENTICATE_URL, AUTHENTICATION_ENDPOINT);
         props.put(BrooklynOauthSecurityConfig.SECURITY_OAUTH_VALIDATE_URL, "https://www.googleapis.com/oauth2/v2/userinfo");
         props.put(BrooklynOauthSecurityConfig.SECURITY_OAUTH_CLIENT_ID, "789182012565-burd24h3bc0im74g2qemi7lnihvfqd02.apps.googleusercontent.com");
         props.put(BrooklynOauthSecurityConfig.SECURITY_OAUTH_CLIENT_SECRET, "X00v-LfU34U4SfsHqPKMWfQl");
@@ -69,7 +67,7 @@ public class OauthSecurityProviderTest  extends BrooklynRestResourceTest {
         props.put(BrooklynOauthSecurityConfig.SECURITY_OAUTH_CODE_OUTPUT_PARAMETER_NAME, "code");
         props.put(BrooklynOauthSecurityConfig.SECURITY_OAUTH_SCOPE, "https://www.googleapis.com/auth/userinfo.email+https://www.googleapis.com/auth/userinfo.profile");
 
-        getManagementContext().getScratchpad().put(BrooklynWebConfig.SECURITY_PROVIDER_INSTANCE, new OauthSecurityProvider(getManagementContext()));
+        props.put(BrooklynWebConfig.SECURITY_PROVIDER_INSTANCE, new OauthSecurityProvider(getManagementContext()));
 
         sf.setProvider(new SessionHandler());
         super.configureCXF(sf);
@@ -78,18 +76,16 @@ public class OauthSecurityProviderTest  extends BrooklynRestResourceTest {
     @Override
     protected void addBrooklynResources() {
         addResource(new BrooklynSecurityProviderFilterJersey());
-//        addResource(new BrooklynSecurityProviderFilterJavax());
-//        addResource(new RequestTaggingRsFilter());
-//        addResource(new EntitlementContextFilter());
         addResource(new TestResource());
     }
 
     @Test
-    public void testRedirection() {
+    public void testLoginRedirection() {
         Response response = fetch("/test");
-        assertEquals(response.getStatus(), Response.Status.FOUND);
-        String tag = response.readEntity(String.class);
-        assertEquals(tag, Strings.EMPTY);
+        // test status
+        assertEquals(response.getStatus(), Response.Status.TEMPORARY_REDIRECT.getStatusCode());
+        // test authorise URL
+        assertTrue(response.getMetadata().get("Location").get(0).toString().startsWith(AUTHENTICATION_ENDPOINT));
     }
 
     protected Response fetch(String path) {
