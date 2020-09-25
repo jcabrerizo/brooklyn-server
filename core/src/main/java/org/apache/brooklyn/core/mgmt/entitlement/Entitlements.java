@@ -76,6 +76,7 @@ public class Entitlements {
     // string is effector name; argument may be a map or a list, depending how the args were supplied
     public static EntitlementClass<EntityAndItem<StringAndArgument>> INVOKE_EFFECTOR = new BasicEntitlementClassDefinition<EntityAndItem<StringAndArgument>>("effector.invoke", EntityAndItem.typeToken(StringAndArgument.class));
     public static EntitlementClass<Entity> MODIFY_ENTITY = new BasicEntitlementClassDefinition<Entity>("entity.modify", Entity.class);
+    public static EntitlementClass<Entity> EXPUNGE_ENTITY = new BasicEntitlementClassDefinition<Entity>("entity.expunge", Entity.class);
 
     // Adjunct entitlements
     public static EntitlementClass<EntityAdjunct> DELETE_ADJUNCT = new BasicEntitlementClassDefinition<>("adjunct.delete", EntityAdjunct.class);

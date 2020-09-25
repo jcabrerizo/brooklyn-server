@@ -468,9 +468,7 @@ public class BrooklynRestResourceUtils {
     }
     
     public Task<?> expunge(final Entity entity, final boolean release) {
-        if (mgmt.getEntitlementManager().isEntitled(Entitlements.getEntitlementContext(),
-                Entitlements.INVOKE_EFFECTOR, Entitlements.EntityAndItem.of(entity, 
-                    StringAndArgument.of("expunge", MutableMap.of("release", release))))) {
+         if (!Entitlements.isEntitled(mgmt.getEntitlementManager(), Entitlements.EXPUNGE_ENTITY, entity)) {
             Map<String, Object> flags = MutableMap.<String, Object>of("displayName", "expunging " + entity, "description", "REST call to expunge entity "
                     + entity.getDisplayName() + " (" + entity + ")");
             if (Entitlements.getEntitlementContext() != null) {
