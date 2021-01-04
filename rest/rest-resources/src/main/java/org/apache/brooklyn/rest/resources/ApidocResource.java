@@ -34,7 +34,7 @@ import org.apache.brooklyn.rest.apidoc.RestApiResourceScanner;
  * @author Ciprian Ciubotariu <cheepeero@gmx.net>
  */
 @Api("API Documentation")
-@Path("/apidoc")
+@Path("/apidoc/swagger.{type:json|yaml}")
 public class ApidocResource extends ApiListingResource {
 
     private void preprocess(Application app, ServletConfig sc) {
